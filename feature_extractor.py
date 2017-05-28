@@ -5,7 +5,8 @@ import os
 
 from nltk.tokenize import sent_tokenize, wordpunct_tokenize
 
-DATA_DIR = 'bdate_data'
+DATA_DIR = 'data'
+COMMENT_PER_USER_THRESHOLD = 1
 
 REFERENCE = re.compile('^\[id\d+\|\w+\],', re.U)
 HTML_TAG = re.compile('</?\w+[^>]*>', re.U)
@@ -34,6 +35,9 @@ def preprocess_comment(text, squash_punct=True):
     # remove smileys
     text = ' '.join([token for token in text.split(' ') if token not in SMILEYS])
 
+    if not text:
+        return None
+
     char_cnt = len(text)
     sent_cnt = word_cnt = punct_cnt = word_len = 0
 
@@ -46,29 +50,69 @@ def preprocess_comment(text, squash_punct=True):
                 word_cnt += 1
                 word_len += len(token)
 
-    return text, {
+    return {
         'sent_cnt': sent_cnt,
         'char_cnt': char_cnt,
         'char_cnt_sent': float(char_cnt) / sent_cnt,
         'word_cnt': word_cnt,
         'word_cnt_sent': float(word_cnt) / sent_cnt,
-        'word_len_avg': float(word_len) / word_cnt,
+        'word_len_avg': (float(word_len) / word_cnt) if word_cnt else 0,
         'punct_cnt': punct_cnt,
         'punct_cnt_sent': float(punct_cnt) / sent_cnt,
-        'punct_cnt_word': float(punct_cnt) / word_cnt,
+        'punct_cnt_word': (float(punct_cnt) / word_cnt) if word_cnt else 0,
         'punct_cnt_char': float(punct_cnt) / char_cnt
     }
 
 
-if __name__ == '__main__':
-    for f in os.listdir(DATA_DIR):
-        with open(os.path.join(DATA_DIR, f), encoding='utf-8') as f_json:
-            data = json.load(f_json)
-            for _, comments in data.items():
-                for c in comments:
-                    c = c.strip()
-                    if len(c) == 1:
-                        continue
+def preprocess_user(u):
+    if 'bdate' not in u or u['bdate'].count('.') != 2:
+        return None
 
-                    c, features = preprocess_comment(c)
-                    pass
+    u['year'] = u['bdate'].split('.')[-1]
+    del u['bdate']
+
+    if 'first_name' in u:
+        del u['first_name']
+    if 'last_name' in u:
+        del u['last_name']
+
+    return u
+
+
+if __name__ == '__main__':
+    total_data = []
+
+    for filename in os.listdir(DATA_DIR):
+        with open(os.path.join(DATA_DIR, filename), encoding='utf-8') as data_json:
+            print("Processing %s" % filename)
+            data = json.load(data_json)
+
+            for user_id, user in data['users'].items():
+                data['users'][user_id] = preprocess_user(user)
+
+            print("Users processed. Start retrieving comments features...")
+            for user_id, comments in data['data'].items():
+                if not data['users'][user_id] or len(comments) < COMMENT_PER_USER_THRESHOLD:
+                    continue
+
+                features = []
+                for comment in comments:
+                    f = preprocess_comment(comment)
+                    if not f:
+                        continue
+                    features.append(f)
+
+                if not features:
+                    continue
+
+                # calculate features avg values
+                total = features[0]
+                comments_cnt = len(features)
+                for key in total.keys():
+                    for f in features[1:]:
+                        total[key] += f[key]
+                    total[key] /= comments_cnt
+                total_data.append((data['users'][user_id], total))
+
+    with open('preprocessed_data.json', mode='w') as out:
+        json.dump(total_data, out)
