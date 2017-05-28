@@ -1,12 +1,20 @@
+import csv
 import json
 import re
 import string
 import os
 
 from nltk.tokenize import sent_tokenize, wordpunct_tokenize
+from collections import defaultdict
 
 DATA_DIR = 'data'
+ANALYSIS_DIR = 'analysis'
+
+READ_PREPROCESSED = False
 COMMENT_PER_USER_THRESHOLD = 1
+
+YEAR_FROM = 1957
+YEAR_TO = 2010
 
 REFERENCE = re.compile('^\[id\d+\|\w+\],', re.U)
 HTML_TAG = re.compile('</?\w+[^>]*>', re.U)
@@ -68,7 +76,9 @@ def preprocess_user(u):
     if 'bdate' not in u or u['bdate'].count('.') != 2:
         return None
 
-    u['year'] = u['bdate'].split('.')[-1]
+    u['year'] = int(u['bdate'].split('.')[-1])
+    if not YEAR_FROM <= u['year'] <= YEAR_TO:
+        return None
     del u['bdate']
 
     if 'first_name' in u:
@@ -80,39 +90,62 @@ def preprocess_user(u):
 
 
 if __name__ == '__main__':
-    total_data = []
+    if READ_PREPROCESSED:
+        with open('preprocessed_data.json') as data_json:
+            total_data = json.load(data_json)
+    else:
+        total_data = []
+        by_comments_count = defaultdict(int)
 
-    for filename in os.listdir(DATA_DIR):
-        with open(os.path.join(DATA_DIR, filename), encoding='utf-8') as data_json:
-            print("Processing %s" % filename)
-            data = json.load(data_json)
+        for filename in os.listdir(DATA_DIR):
+            with open(os.path.join(DATA_DIR, filename), encoding='utf-8') as data_json:
+                print("Processing %s" % filename)
+                data = json.load(data_json)
 
-            for user_id, user in data['users'].items():
-                data['users'][user_id] = preprocess_user(user)
+                for user_id, user in data['users'].items():
+                    data['users'][user_id] = preprocess_user(user)
 
-            print("Users processed. Start retrieving comments features...")
-            for user_id, comments in data['data'].items():
-                if not data['users'][user_id] or len(comments) < COMMENT_PER_USER_THRESHOLD:
-                    continue
-
-                features = []
-                for comment in comments:
-                    f = preprocess_comment(comment)
-                    if not f:
+                print("Users processed. Start retrieving comments features...")
+                for user_id, comments in data['data'].items():
+                    if not data['users'][user_id] or len(comments) < COMMENT_PER_USER_THRESHOLD:
                         continue
-                    features.append(f)
 
-                if not features:
-                    continue
+                    features = []
+                    for comment in comments:
+                        f = preprocess_comment(comment)
+                        if not f:
+                            continue
+                        features.append(f)
 
-                # calculate features avg values
-                total = features[0]
-                comments_cnt = len(features)
-                for key in total.keys():
-                    for f in features[1:]:
-                        total[key] += f[key]
-                    total[key] /= comments_cnt
-                total_data.append((data['users'][user_id], total))
+                    if not features:
+                        continue
 
-    with open('preprocessed_data.json', mode='w') as out:
-        json.dump(total_data, out)
+                    # calculate features avg values
+                    total = features[0]
+                    comments_cnt = len(features)
+
+                    by_comments_count[comments_cnt] += 1
+
+                    for key in total.keys():
+                        for f in features[1:]:
+                            total[key] += f[key]
+                        total[key] /= comments_cnt
+                    total_data.append((data['users'][user_id], total))
+
+        with open('preprocessed_data.json', mode='w') as out:
+            json.dump(total_data, out)
+
+        with open(os.path.join(ANALYSIS_DIR, 'by_comments_count.csv'), mode='w') as out:
+            writer = csv.writer(out)
+            for cnt in sorted(by_comments_count.keys()):
+                writer.writerow((cnt, by_comments_count[cnt]))
+
+    by_birth_year = defaultdict(int)
+    for item in total_data:
+        user, features = item
+        by_birth_year[user['year']] += 1
+
+    with open(os.path.join(ANALYSIS_DIR, 'by_birth_year.csv'), mode='w') as out:
+        writer = csv.writer(out)
+        for year in range(YEAR_FROM, YEAR_TO + 1):
+            writer.writerow((year, by_birth_year[year]))
