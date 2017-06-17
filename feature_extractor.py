@@ -12,7 +12,7 @@ ANALYSIS_DIR = 'analysis'
 
 READ_PREPROCESSED = False
 AVG = False
-COMMENT_PER_USER_THRESHOLD = 1
+COMMENT_PER_USER_THRESHOLD = 10
 
 YEAR_FROM = 1957
 YEAR_TO = 2010
@@ -118,7 +118,7 @@ if __name__ == '__main__':
                             continue
                         features.append(f)
 
-                    if not features:
+                    if len(features) < COMMENT_PER_USER_THRESHOLD:
                         continue
 
                     comments_cnt = len(features)
