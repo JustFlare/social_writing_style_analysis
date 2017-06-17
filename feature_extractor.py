@@ -11,6 +11,7 @@ DATA_DIR = 'data'
 ANALYSIS_DIR = 'analysis'
 
 READ_PREPROCESSED = False
+AVG = False
 COMMENT_PER_USER_THRESHOLD = 1
 
 YEAR_FROM = 1957
@@ -91,7 +92,7 @@ def preprocess_user(u):
 
 if __name__ == '__main__':
     if READ_PREPROCESSED:
-        with open('preprocessed_data.json') as data_json:
+        with open('%spreprocessed_data.json' % ('avg_' if AVG else '')) as data_json:
             total_data = json.load(data_json)
     else:
         total_data = []
@@ -120,19 +121,23 @@ if __name__ == '__main__':
                     if not features:
                         continue
 
-                    # calculate features avg values
-                    total = features[0]
                     comments_cnt = len(features)
-
                     by_comments_count[comments_cnt] += 1
 
-                    for key in total.keys():
-                        for f in features[1:]:
-                            total[key] += f[key]
-                        total[key] /= comments_cnt
-                    total_data.append((data['users'][user_id], total))
+                    if AVG:
+                        # calculate features avg values
+                        total = features[0]
+                        for key in total.keys():
+                            for f in features[1:]:
+                                total[key] += f[key]
+                            total[key] /= comments_cnt
+                        total_data.append((data['users'][user_id], total))
+                    else:
+                        # proceed (user_data, comment_features) pairs
+                        for f in features:
+                            total_data.append((data['users'][user_id], f))
 
-        with open('preprocessed_data.json', mode='w') as out:
+        with open('%spreprocessed_data.json' % ('avg_' if AVG else ''), mode='w') as out:
             json.dump(total_data, out)
 
         with open(os.path.join(ANALYSIS_DIR, 'by_comments_count.csv'), mode='w') as out:
@@ -140,12 +145,14 @@ if __name__ == '__main__':
             for cnt in sorted(by_comments_count.keys()):
                 writer.writerow((cnt, by_comments_count[cnt]))
 
-    by_birth_year = defaultdict(int)
-    for item in total_data:
-        user, features = item
-        by_birth_year[user['year']] += 1
+    if AVG:
+        # calculate birth year stats only within average data
+        by_birth_year = defaultdict(int)
+        for item in total_data:
+            user, features = item
+            by_birth_year[user['year']] += 1
 
-    with open(os.path.join(ANALYSIS_DIR, 'by_birth_year.csv'), mode='w') as out:
-        writer = csv.writer(out)
-        for year in range(YEAR_FROM, YEAR_TO + 1):
-            writer.writerow((year, by_birth_year[year]))
+        with open(os.path.join(ANALYSIS_DIR, 'by_birth_year.csv'), mode='w') as out:
+            writer = csv.writer(out)
+            for year in range(YEAR_FROM, YEAR_TO + 1):
+                writer.writerow((year, by_birth_year[year]))
