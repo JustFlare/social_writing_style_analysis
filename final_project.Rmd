@@ -1,0 +1,74 @@
+---
+title: "Social Writing Style Analysis"
+author: "Moiseev G., Nasedkin A."
+output:
+  html_document: default
+---
+
+## Introduction
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lme4)
+
+rm(list=ls())
+```
+
+## Data description
+
+Description...
+
+### Load the data. Gather desired columns. Filter the data by .95 quantile of target variable.
+```{r}
+df <- read.csv(file="/Users/nasedkinav/PycharmProjects/script/social_writing_style_analysis/csv/csv_data.csv", header=TRUE, sep=",")
+df <- df[c("u_id", "u_sex", "u_year", "u_uni", "f_char_cnt_sent", "f_word_cnt_sent", "f_word_len_avg", "f_punct_cnt_word")]
+df <- df[df$f_punct_cnt_word < quantile(df$f_punct_cnt_word, 0.95),]
+head(df, 10)
+```
+
+### Compute mean feature values by user
+```{r}
+avg_df <- aggregate(. ~ u_id + u_sex + u_year + u_uni, df, mean)
+avg_df[avg_df$u_id == 242515614, ]
+```
+
+### Fit and store the linear regression models by each user
+```{r}
+# remain only desired comment features
+df <- df[c("u_id", "f_char_cnt_sent", "f_word_cnt_sent", "f_word_len_avg", "f_punct_cnt_word")]
+
+users <- sort(unique(df$u_id))
+user_lm <- list()
+for (id in users) {
+  user_lm[[id]] <- lm(f_punct_cnt_word ~ ., data = df[df$u_id == id, names(df) != "u_id"])
+  # debug
+  print(id)
+  break
+}
+summary(user_lm[[id]])
+rm(id)
+```
+
+### Fit the linear regression model on the whole mean data
+```{r}
+# remain sex, year and comment features
+avg_df <- avg_df[c("u_sex", "u_year", "f_char_cnt_sent", "f_word_cnt_sent", "f_word_len_avg", "f_punct_cnt_word")]
+
+avg_fit <- lm(f_punct_cnt_word ~ ., data = avg_df)
+summary(avg_fit)
+```
+
+### Fit and store the linear regression models by each birth year group
+```{r}
+years <- sort(unique(avg_df$u_year))
+year_lm <- list()  # list of lm by each presented year
+for (y in years) {
+  year_lm[[y]] <- lm(f_punct_cnt_word ~ ., data = avg_df[avg_df$u_year == y, names(avg_df) != "u_year"])
+}
+rm(y)
+summary(year_lm[[1994]])
+```
