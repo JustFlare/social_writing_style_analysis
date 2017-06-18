@@ -14,6 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(lme4)
+library(car)
 
 rm(list=ls())
 ```
@@ -71,4 +72,10 @@ for (y in years) {
 }
 rm(y)
 summary(year_lm[[1994]])
+```
+
+## Standard and Leverage plots for avg_fit
+```{r}
+plot(avg_fit)
+leveragePlots(avg_fit)
 ```
