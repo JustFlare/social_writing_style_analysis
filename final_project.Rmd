@@ -2,10 +2,17 @@
 title: "Social Writing Style Analysis"
 author: "Moiseev G., Nasedkin A."
 output:
-  html_document: default
+  html_document:
+    toc: true
+    toc_float: true
 ---
 
 ## Introduction
+
+Project description and scripts for comments retrieving from VK groups can be found in our [GitHub repository](https://github.com/JustFlare/social_writing_style_analysis)
+
+Prerequisites:
+ * the *csv_data.csv* file should be located in the same directory with current .Rmd file
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -19,13 +26,11 @@ library(car)
 rm(list=ls())
 ```
 
-## Data description
-
-Description...
+## Data
 
 ### Load the data. Gather desired columns. Filter the data by .95 quantile of target variable.
 ```{r}
-df <- read.csv(file="/Users/nasedkinav/PycharmProjects/script/social_writing_style_analysis/csv/csv_data.csv", header=TRUE, sep=",")
+df <- read.csv(file="csv_data.csv", header=TRUE, sep=",")
 df <- df[c("u_id", "u_sex", "u_year", "u_uni", "f_char_cnt_sent", "f_word_cnt_sent", "f_word_len_avg", "f_punct_cnt_word")]
 df <- df[df$f_punct_cnt_word < quantile(df$f_punct_cnt_word, 0.95),]
 head(df, 10)
@@ -36,6 +41,68 @@ head(df, 10)
 avg_df <- aggregate(. ~ u_id + u_sex + u_year + u_uni, df, mean)
 avg_df[avg_df$u_id == 242515614, ]
 ```
+
+### General statistics
+```{r}
+sprintf('Distinct users: %d', length(unique(df$u_id)))
+sprintf('Distinct comments: %d', nrow(df))
+sprintf('Average number of comments per user: %f', nrow(df) / length(unique(df$u_id)))
+```
+
+### Distributions
+```{r warning=FALSE}
+# users distribution by comments count
+stat <- df %>%
+  group_by(u_id) %>%
+  summarise(cnt_comment = n()) %>%
+  group_by(cnt_comment) %>%
+  summarise(cnt_user = n())
+
+stat %>%
+  ggplot(aes(cnt_comment, cnt_user)) +
+  geom_line() +
+  # Right boundary set in order to zoom chart a little
+  # cause there are some users with astonishing count of comments
+  # Left boundary set due to the assumption in data
+  scale_x_continuous(limits = c(10, 100)) +
+  labs(
+    title="Distribution of users by number of their comments",
+    x="Number of comments",
+    y="Number of unique users"
+  )
+```
+```{r}
+# comments count by birth year of their author
+df %>%
+  group_by(u_year) %>%
+  summarise(cnt_comment = n()) %>%
+  ggplot(aes(u_year, cnt_comment)) +
+  geom_line() +
+  scale_x_discrete(limits = seq(min(df$u_year), max(df$u_year), 3)) +
+  theme(axis.text.x=element_text(angle=30)) +
+  labs(
+    title="Distribution of comments by their author age",
+    x="Author age",
+    y="Number of comments"
+  )
+```
+```{r}
+# birth year distribution
+unique(df[c('u_id', 'u_year')]) %>%
+  group_by(u_year) %>%
+  summarise(cnt_user = n()) %>%
+  ggplot(aes(u_year, cnt_user)) +
+  geom_line() +
+  scale_x_discrete(limits = seq(min(df$u_year), max(df$u_year), 3)) +
+  theme(axis.text.x=element_text(angle=30)) +
+  labs(
+    title="Distribution of users by their age",
+    x="Age",
+    y="Number of unique users"
+  )
+```
+
+## Regression
 
 ### Fit and store the linear regression models by each user
 ```{r}
@@ -74,7 +141,7 @@ rm(y)
 summary(year_lm[[1994]])
 ```
 
-## Standard and Leverage plots for avg_fit
+## Standard and Leverage plots
 ```{r}
 plot(avg_fit)
 leveragePlots(avg_fit)
