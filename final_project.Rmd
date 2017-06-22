@@ -107,10 +107,14 @@ unique(df[c('u_id', 'u_year')]) %>%
 
 ## Regression
 
+```{r constants}
+pvalue_threshold = 0.05
+awl_threshold = 25
+```
+
 
 ### Fit and store the linear regression models by each user who has enough comments
 ```{r}
-pvalue_threshold = 0.05
 
 # function to return the p-value from fitted regression
 lmp <- function (modelobject) {
@@ -141,7 +145,6 @@ for (id in users) {
   temp_lm <- lm(f_punct_cnt_word ~ ., data = df_text_based[df_text_based$u_id == id, names(df_text_based) != "u_id"])
   temp_lmp <- lmp(temp_lm)
   if (is.nan(temp_lmp)) {
-    print(sprintf("Undefined p-value for user %d", id))
     next
   }
   if (temp_lmp < pvalue_threshold) {
@@ -165,81 +168,78 @@ Lets include personal features such as sex and birth year. To make such regressi
 ```{r}
 # remain sex, year and comment features
 avg_df_year <- avg_df[c("u_sex", "u_year", "f_char_cnt_sent", "f_word_cnt_sent", "f_word_len_avg", "f_punct_cnt_word")]
-
 avg_fit_year <- lm(f_punct_cnt_word ~ ., data = avg_df_year)
 summary(avg_fit_year)
-```
 
+
+```
 We can see that all absolute t-values for our factors are bigger than 1.96 which means that they all are statistically significant (we can't replace them with null). So, we can say that personal features are at least useful in such model.
 
-The p-value is lower than 0.05 => the regression is significant. But its' value is extremely small which is a bit suspicious. The reason for that can be noise in our data or its' large amount. Maybe visualization of this model would make things more clear?
+The p-value is lower than 0.05 => the regression is significant. But its' value is extremely small which is a bit suspicious. The reason for that can be noise in our data or just its' large amount. Maybe visualization of this model would make things more clear?
 
-## Standard and Leverage plots
-### With year
 ```{r}
-plot(avg_df_year)
-leveragePlots(avg_df_year)
+plot(avg_fit_year)
 ```
 
-From this plots we can acertain that despite our quantile filtering there still are some noises and outliers in our data that make things quite strange on the plots.
+The first thing that catches the eye is some outliers and noises in the data. After some analysis we figure out that this is connected with very high average word length. So, we filtered out all word below {awl_threshold}
+
+```{r}
+# clean some data with very long average word length
+avg_df_year <- avg_df_year[avg_df_year$f_word_len_avg < awl_threshold,]
+avg_fit_year <- lm(f_punct_cnt_word ~ ., data = avg_df_year)
+summary(avg_fit_year)
+plot(avg_fit_year)
+```
+
+But even after filtering, graphs reveal some notable patterns. It seems like our model is not the best one for fitting such data, as it may contain non-linear dependencies (on the first graph the red curve is not quite flat). But it is certainly not the worst case for linear model and it is possible to use it here.
+On the second graph (Normal Q-Q) there are still some residuals with big deviations (on the left side), but the main quantity is distributed normally. Following the third one (Scale-Location) we may presume the lack of data homoscedasticity. Finally, the last graph shows outliers which should be further deeply analysed.
 
 
-But how can we evaluate the influence of year in our model. Firts thing to see - how model would work without it:
+Also, we want to evaluate the influence of year in our model. Firts thing to see - how model would work without it:
 
 ### Do it again but without year
 ```{r}
 # remain sex, year and comment features
 avg_df_wo_year <- avg_df[c("u_sex", "f_char_cnt_sent", "f_word_cnt_sent", "f_word_len_avg", "f_punct_cnt_word")]
+avg_df_wo_year <- avg_df_wo_year[avg_df_wo_year$f_word_len_avg < awl_threshold ,]
 
-avg_fit_wo_year <- lm(f_punct_cnt_word ~ ., data = avg_df_wo_year )
+avg_fit_wo_year <- lm(f_punct_cnt_word ~ ., data = avg_df_wo_year)
 summary(avg_fit_wo_year)
 ```
 
-Again we see extremely small p-value (the data is the same) but now the F-statistics is smaller. 
-Moreover, we can make sense from another measure - Adjusted R-squared which is only useful in model comparison. Adjusted R-squared as simple R-squared indicates how well terms fit a line but it also penalizes for useless variables. We can see that without year Adjusted R-squared is lower => the model withour year is making more errors or its' regressors aren't efficient enough. This is first argument in favour of our hypothesis - that number of punctuation marks depends on birth year. In other case Adjusted R-squared would penalize us for useless variable and the model without year would have greater Adjusted R-squared value.
+Again we see extremely small p-value (due to the data) but now the F-statistics is smaller. 
+Moreover, we can make sense from another measure - Adjusted R-squared which is useful in model comparison. Adjusted R-squared as simple R-squared indicates how well terms fit a line but it also penalizes for useless variables. We can see that without year Adjusted R-squared is lower => the model withour year is making more errors or its' regressors aren't efficient enough.
+So, we can state that number of punctuation marks depends on birth year somehow. In other case Adjusted R-squared would penalize us for useless variable and the model without year would have greater Adjusted R-squared value.
 
 
+## check the linear dependancy between punctuation number and birth year
 
-Just for comparison we may look at the plots of model without birth year:
-
-### Without year plots
+To exlucde influnce of other factors in the model we need to analyze residuals of the without-year model for each birth year group. To achieve this we aggregate the data by year and fit regression on it.
 ```{r}
-plot(avg_fit_wo_year)
-leveragePlots(avg_fit_wo_year)
+df_t <- df[c("u_year", "f_char_cnt_sent", "f_word_cnt_sent", "f_word_len_avg", "f_punct_cnt_word")]
+avg_by_year_df <- aggregate(. ~ u_year, df_t, mean)
+
+avg_by_year <- lm(f_punct_cnt_word ~ ., data = avg_by_year_df)
+plot(avg_by_year)
+
 ```
 
-Another way to check influence of birth year is to analyze regression models built for each year. 
+From the first and the third plots we again may state that data is spread non-linearly. Now, unlike the first regression, it can be seen more clearly. And again from the second plot we can see that data is distributed quite normally. From the fourth plot we can notice some outliers on the right side of the plot.
 
-### Fit and store the linear regression models by each birth year group
 ```{r}
-years <- sort(unique(avg_df_year$u_year))
-year_lm <- hash()  # list of lm by each presented year
-for (y in years) {
-  t_lm <- lm(f_punct_cnt_word ~ ., data = avg_df_year[avg_df_year$u_year == y, names(avg_df_year) != "u_year"])
-  t_pv <- lmp(t_lm)
-  if (is.nan(t_pv)) {
-    print(sprintf("Undefined p-value for user %d", id))
-    next
-  }
-  if (t_pv < pvalue_threshold) {
-    year_lm[y] <- t_lm
-  }
-}
-rm(y)
-
-length(year_lm) / length(years)
+avg_by_year_df %>%
+ggplot(aes(u_year, f_punct_cnt_word)) +
+geom_smooth(method = "lm") +
+geom_point() +
+scale_x_discrete(limits = seq(min(avg_by_year_df$u_year), max(avg_by_year_df$u_year), 3)) +
+theme(axis.text.x=element_text(angle=30)) +
+labs(
+title="LM smoothing",
+x="Birth year",
+y="Avg punct by word"
+)
 ```
-As before, we check the percent of significant regressions and now it is much more convincing - about 90%. Unsurprisingly, fitting regression on averaged data with different users occured to be more efficient than fitting it on individuals' data. The sex factor also tend to be quite useful as we could see in the previous test.
 
-To compare year regressions we apply chow test on the significant ones. the Chow test is often used to determine whether the independent variables have different impacts on different subgroups of the population.
-```{r}
-# gather coefficients
-
-#TODO: - коэффициенты сюда пихать или нет?
-fs <- Fstats(f_punct_cnt_word ~ 1, data = avg_df_year, from = 1957, to=2002)
-
-#sctest(Employed ~ Year + GNP.deflator + GNP + Armed.Forces, data = longley,
-#type = "Chow", point = 7)
-
-```
+From this plot we can clearly see that dependency between number of punctuation marks and birth year is non-linear. Also we see that older people tends to use more punctuation marks than younger ones.
+It is worth saying that in the last model the influence of older people on common trend in unpropotionally high that in regressions built on authors.
 
